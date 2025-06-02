@@ -9,11 +9,10 @@ import code.api.util.ErrorMessages.{UnknownError, UserNotLoggedIn}
 import com.openbankproject.commons.model.User
 import net.liftweb.common._
 import net.liftweb.http.provider.HTTPParam
-import org.http4s.{Request, _}
 import org.http4s.headers.`Content-Type`
+import org.http4s.{Request, _}
 
 import java.util.UUID
-import scala.collection.immutable.List
 
 object AuthMiddleware {
 
@@ -29,7 +28,7 @@ object AuthMiddleware {
         val params: Map[String, String] = req.uri.query.params
         val ipAddress = req.remote.map(_.host.toString).getOrElse("")
         val correlationId = UUID.randomUUID().toString
-        val sessonId = UUID.randomUUID().toString
+        val sessionId = UUID.randomUUID().toString
         
         val spellingHeader = reqHeaders.find(_.name.equalsIgnoreCase(nameOfSpellingParam()))
         val spellingHeaderValue = spellingHeader.flatMap(_.values.headOption)
@@ -51,7 +50,7 @@ object AuthMiddleware {
           requestHeaders = reqHeaders,
           ipAddress = ipAddress,
           correlationId = correlationId,
-          sessionId = Some(sessonId),
+          sessionId = Some(sessionId),
           implementedInVersion = "1.3.0",//TODO,this should be from resourceDoc
         )
         

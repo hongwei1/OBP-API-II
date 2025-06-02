@@ -27,7 +27,8 @@ object RestHelperChecks {
       //TODO  here should be `isNeedCheckAuth`,we should use resourceDos here.
 //      if (false) authenticatedAccessFunHttp4s(req,cc)
 //      else 
-        anonymousAccessFunHttp4s(req,cc) 
+//        anonymousAccessFunHttp4s(req,cc)
+    anonymousAccessHttp4s(req,cc) 
         
 
     futureToIO(resultF).map {
