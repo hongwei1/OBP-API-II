@@ -5356,5 +5356,32 @@ object APIUtil extends MdcLoggable with CustomJsonFormats{
       StringHelpers.snakify(pair._1)
         .dropRight(1) //Remove the "_" in the end, eg canCreateStandingOrder_ --> canCreateStandingOrder
     ).toSet
+
+  def extractResourceDocFields(requestUrl: String): (String ,String, String) = {
+    //eg: /obp/v3.1.0/banks/gh.29.uk/accounts/gh.29.uk.current-account-12345/owner
+    //eg: /obp/v3.1.0/banks/gh.29.uk/accounts/gh.29.uk.current-account-12345/owner?param1=value1&param2=value2
+
+    // Normalize URL: remove query string and trailing slash
+    val cleanUrl = requestUrl.takeWhile(_ != '?').stripSuffix("/")
+    
+    val cleanUrlList = cleanUrl.split("/").toList
+    
+    val apiStandard = cleanUrlList match {
+      case Nil => ""
+      case _ :: starndard :: _  => starndard // the 3rd part is the api version
+    }
+    
+    val requestedApiVersionString = cleanUrlList match {
+      case Nil => ""
+      case _ :: _ :: apiVersion :: _ => apiVersion // the 3rd part is the api version
+    }
+
+    val resourceDocUrl = cleanUrlList match {
+      case Nil => ""
+      case _ :: _ ::_ :: rest => rest.mkString("/","/", "") // the rest is the resource doc url, start from th .
+    }
+    
+    (apiStandard, requestedApiVersionString, resourceDocUrl)
+  }
   
 }
