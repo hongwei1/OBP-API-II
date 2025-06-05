@@ -1,6 +1,6 @@
 package code.api.v1_3_0
 
-import bootstrap.http4s.middleware.AuthMiddleware._
+import bootstrap.http4s.CallContextKeyProvider.callContextKey
 import bootstrap.http4s.middleware.JsonErrorHandlerMiddleware.executeWithErrorHandling
 import cats.effect._
 import cats.syntax.all._
@@ -9,7 +9,7 @@ import code.api.ResourceDocs1_4_0.SwaggerDefinitionsJSON._
 import code.api.util.APIUtil._
 import code.api.util.ApiTag._
 import code.api.util.ErrorMessages._
-import code.api.util.{ApiRole, CallContext, CustomJsonFormats, NewStyle}
+import code.api.util.{ApiRole, CustomJsonFormats, NewStyle}
 import code.api.v1_2_1.JSONFactory
 import com.github.dwickern.macros.NameOf.nameOf
 import com.openbankproject.commons.ExecutionContext.Implicits.global
@@ -23,7 +23,6 @@ import scala.collection.mutable.ArrayBuffer
 object APIMethods130 {
 
   implicit val formats: Formats = CustomJsonFormats.formats
-
   implicit def convertAnyToJsonString(any: Any): String = prettyRender(Extraction.decompose(any))
 
   val implementedInApiVersion: ScannedApiVersion = ApiVersion.v1_3_0
@@ -77,14 +76,14 @@ object APIMethods130 {
     // Route: GET /obp/v1.3.0/cards
     val getCardsRoute: HttpRoutes[IO] = HttpRoutes.of[IO] {
       case req @ GET -> `prefixPath` / "cards" =>
-        securedEndpoint { (user: User, callContext: CallContext) =>
-          val obpResponse = for {
-            (cards, updatedCtx) <- NewStyle.function.getPhysicalCardsForUser(user, Some(callContext))
-            json: String = JSONFactory1_3_0.createPhysicalCardsJSON(cards, user)
-          } yield (json, updatedCtx)
-          
-          executeWithErrorHandling(obpResponse)
-        }(req)
+        val callContext = req.attributes.lookup(callContextKey)
+        val user: User = callContext.flatMap(_.user.headOption).getOrElse(throw new IllegalArgumentException(UserNotLoggedIn))
+        val obpResponse = for {
+          (cards, updatedCtx) <- NewStyle.function.getPhysicalCardsForUser(user, callContext)
+          json: String = JSONFactory1_3_0.createPhysicalCardsJSON(cards, user)
+        } yield (json, updatedCtx)
+
+        executeWithErrorHandling(obpResponse)
     }
 
 
@@ -105,20 +104,19 @@ object APIMethods130 {
     // Route: GET /obp/v1.3.0/banks/BANK_ID/cards
     val getCardsForBankRoute: HttpRoutes[IO] = HttpRoutes.of[IO] {
       case req @ GET -> `prefixPath` / "banks" / bankId / "cards" =>
-        securedEndpoint { (user: User, callContext: CallContext) =>
-          val obpResponse = for {
-            httpParams <- NewStyle.function.extractHttpParamsFromUrl(req.uri.renderString)
-            (queryParams, ctx1) <- createQueriesByHttpParamsFuture(httpParams, Some(callContext))
-            _ <- NewStyle.function.hasEntitlement(bankId, user.userId, ApiRole.canGetCardsForBank, ctx1)
+        val callContext = req.attributes.lookup(callContextKey)
+        val user: User = callContext.flatMap(_.user.headOption).getOrElse(throw new IllegalArgumentException(UserNotLoggedIn))
+        val obpResponse = for {
+            httpParams <- NewStyle.function.extractHttpParamsFromUrl(callContext.map(_.url).getOrElse(req.uri.toString))
+            (queryParams, ctx1) <- createQueriesByHttpParamsFuture(httpParams, callContext)
+            _ <- NewStyle.function.hasEntitlement(bankId, ctx1.map(_.user.head.userId).head, ApiRole.canGetCardsForBank, ctx1)
             (bank, ctx2) <- NewStyle.function.getBank(BankId(bankId), ctx1)
-            (cards, ctx3) <- NewStyle.function.getPhysicalCardsForBank(bank, user, queryParams, ctx2)
-            json: String = JSONFactory1_3_0.createPhysicalCardsJSON(cards, user)
+            (cards, ctx3) <- NewStyle.function.getPhysicalCardsForBank(bank, ctx1.map(_.user.head).head, queryParams, ctx2)
+            json: String = JSONFactory1_3_0.createPhysicalCardsJSON(cards, ctx1.map(_.user.head).head)
           } yield (json, ctx3)
-          
+        
           executeWithErrorHandling(obpResponse)
-          
-        }(req)
-    }
+        }
 
     // All routes combined
     val allRoutes: HttpRoutes[IO] =

@@ -2,39 +2,37 @@ package bootstrap.http4s.middleware
 
 import bootstrap.http4s.CallContextKeyProvider.callContextKey
 import bootstrap.http4s.RestHelperChecks._
+import cats.data.{Kleisli, OptionT}
 import cats.effect.IO
-import code.api.util.CallContext
 import code.api.util.ErrorMessages.{UnknownError, UserNotLoggedIn}
-import com.openbankproject.commons.model.User
+import net.liftweb.common._
 import org.http4s.headers.`Content-Type`
 import org.http4s.{Request, _}
 
 object AuthMiddleware {
-
   def securedEndpoint(
-    handler: (User, CallContext) => IO[Response[IO]]
-  ): Request[IO] => IO[Response[IO]] = { req =>
+    routes: HttpRoutes[IO]
+  ): HttpRoutes[IO] = Kleisli { req: Request[IO] =>
     req.attributes.lookup(callContextKey) match {
       case Some(cc) =>
-        for {
-          result <- checkAuth(req, cc)
-          (userOpt, updatedCtx) = result
-          response <- userOpt match {
-            case Some(user) => handler(user, updatedCtx)
-            case None       =>
-              val errorJson = s"""{"code": 403, "message": "$UserNotLoggedIn"}"""
-              IO(Response[IO](status = Status.fromInt(403).getOrElse(Status.InternalServerError))
+        OptionT.liftF(checkAuth(req, cc)).flatMap {
+          case (Some(user), updatedCtx) =>
+            routes(req.withAttribute(callContextKey, updatedCtx.copy(user = Full(user))))
+          case (None, _) =>
+            val errorJson = s"""{"code": 403, "message": "$UserNotLoggedIn"}"""
+            OptionT.pure[IO](
+              Response[IO](status = Status.Forbidden)
                 .withEntity(errorJson)
-                .withContentType(`Content-Type`(MediaType.application.json)))
-          }
-        } yield response
-
+                .withContentType(`Content-Type`(MediaType.application.json))
+            )
+        }
       case None =>
         val errorJson = s"""{"code": 500, "message": "$UnknownError CallContext missing"}"""
-        IO(Response[IO](status = Status.InternalServerError)
-          .withEntity(errorJson)
-          .withContentType(`Content-Type`(MediaType.application.json)))
-        
+        OptionT.pure[IO](
+          Response[IO](status = Status.InternalServerError)
+            .withEntity(errorJson)
+            .withContentType(`Content-Type`(MediaType.application.json))
+        )
     }
   }
 }
