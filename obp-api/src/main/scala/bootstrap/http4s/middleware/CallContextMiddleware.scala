@@ -4,14 +4,16 @@ import bootstrap.http4s.CallContextKeyProvider.callContextKey
 import cats.data.Kleisli
 import cats.effect.IO
 import code.api.util.APIUtil.nameOfSpellingParam
-import code.api.util.CallContext
+import code.api.util.{APIUtil, CallContext}
+import code.api.v1_3_0.APIMethods130
+import code.util.Helper.MdcLoggable
 import net.liftweb.common._
 import net.liftweb.http.provider.HTTPParam
 import org.http4s.{Request, _}
 
 import java.util.UUID
 
-object CallContextMiddleware {
+object CallContextMiddleware extends MdcLoggable{
 
   /**
    * Middleware to inject a new CallContext into every incoming request.
@@ -35,12 +37,22 @@ object CallContextMiddleware {
     //          case Right(value) => Full(value)
     //          case Left(_)      => Empty
     //        }
+    //TODO. this body may need to changed to http4s body, it is Stream type in http4s
     val body: Box[String] = Full("")
-    //here, we need to prepare the resouceDoc, so we need to use the resourceDoc from the request.
-    //        val resourceDocument = cc.resourceDoc match {
-    //          case Full(doc) => doc
-    //          case _ => throw new RuntimeException("ResourceDoc is missing in CallContext")
-    //        }
+
+    val (standard, version, resourceDocUrl) = APIUtil.extractResourceDocFields(url)
+
+    val resourceDoc = APIMethods130.resourceDocs.find(doc =>
+      doc.implementedInApiVersion.apiShortVersion == version &&
+      doc.implementedInApiVersion.apiStandard == standard &&
+      doc.requestUrl == resourceDocUrl
+    ) match {
+      case Some(resourceDoc) => 
+        Some(resourceDoc)
+      case None => 
+        logger.error(s"ResourceDoc not found for URL: $url")
+        None
+    }
     
     val callContext = CallContext(
       url = url,
@@ -54,8 +66,8 @@ object CallContextMiddleware {
       ipAddress = ipAddress,
       correlationId = correlationId,
       sessionId = Some(sessionId),
-      implementedInVersion = "1.3.0",//TODO,this should be from resourceDoc
-      resourceDocument = None // we need to get it from partial function, how to store all the docs, and how to get the right one?
+      implementedInVersion = version,
+      resourceDocument = resourceDoc
     )
     
     val updatedReq = req.withAttributes(
